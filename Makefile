@@ -6,8 +6,7 @@
 
 PYTHON   := python3
 TSE_PY   := tse.py
-TSE_FILES := 2026-02-20-Hennig.tse 2025-12-02-Im_Angebot.tse java-test-256.tse java-test-384.tse
-IM_ANGEBOT := 2025-12-02-Im_Angebot.tse
+TSE_FILES := test-java-256.tse test-java-384.tse test-quirks.tse test-standard.tse
 
 # Virtualenv for test dependencies
 VENV := .venv
