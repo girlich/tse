@@ -6,7 +6,8 @@
 
 PYTHON   := python3
 TSE_PY   := tse.py
-TSE_FILES := test-java-256.tse test-java-384.tse test-quirks.tse test-standard.tse
+TSE_DIR  := examples
+TSE_FILES := $(TSE_DIR)/test-java-256.tse $(TSE_DIR)/test-java-384.tse $(TSE_DIR)/test-quirks.tse $(TSE_DIR)/test-standard.tse
 
 # Virtualenv for test dependencies
 VENV := .venv
