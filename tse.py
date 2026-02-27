@@ -280,12 +280,23 @@ def main():
     parser = argparse.ArgumentParser(description="Verify TSE/DSFinV-K V0 QR signature")
     parser.add_argument("--use-tz", choices=["0", "1"], default="0",
                         help="1=honor timezone offsets (standard). 0=ignore offsets (compat). Default 0")
+    parser.add_argument('-i', '--input',
+                        type=argparse.FileType('r'), default=sys.stdin,
+                        help="file to read from. Default: stdin",
+                        metavar="file name" )
     args = parser.parse_args()
     use_tz = args.use_tz == "1"
+    
+    if args.input.isatty():
+        print("Error: no input given. Use file name or pipe.")
+        parser.print_help()
+        sys.exit(1)
 
-    raw = sys.stdin.read().strip()
+    raw = args.input.read().strip()
     if not raw:
         sys.exit("No input received")
+    if args.input is not sys.stdin:
+        args.input.close()
 
     fields = raw.split(";")
     if len(fields) != 12:
