@@ -91,7 +91,7 @@ def parse_process_data(process_data):
 # Manual DER helpers removed: we now rely on asn1crypto for canonical DER encoding.
 
 
-def _iso8601_to_unix_time(date_time_string: str, ignore_offset: bool = False) -> int:
+def _iso8601_to_dt(date_time_string: str, ignore_offset: bool = False) -> datetime:
     """Parse ISO-8601 date-time to Unix seconds.
 
     Accepts either an instant ending with 'Z' or an offset like '+01:00' or
@@ -113,12 +113,18 @@ def _iso8601_to_unix_time(date_time_string: str, ignore_offset: bool = False) ->
     if sign is None or ignore_offset:
         # Either a Z-suffixed time, or we're instructed to ignore any offset
         dt = datetime(y, mo, d, h, mi, s_, tzinfo=timezone.utc)
-        return int(dt.timestamp())
+        return dt
     off_h, off_m = int(m.group(9)), int(m.group(10))
     sign_mul = 1 if sign == '+' else -1
     tz = timezone(timedelta(seconds=sign_mul * (off_h * 3600 + off_m * 60)))
     dt = datetime(y, mo, d, h, mi, s_, tzinfo=tz)
-    return int(dt.timestamp())
+    return dt
+
+
+def _iso8601_to_unix_time(date_time_string: str, ignore_offset: bool = False) -> int:
+    dt = _iso8601_to_dt(date_time_string, ignore_offset)
+    unix = dt.timestamp()
+    return int(unix)
 
 
 def _signature_algorithm_to_oid(sig_alg: str) -> str:
@@ -275,17 +281,61 @@ def verify_signature(payload_bytes, signature_bytes, public_key_bytes, sig_alg):
     except InvalidSignature:
         return False
 
+def ledger_dump(data):
+    # Default config, will be overwritten by a config file.
+    config = {
+        "ledger": {
+            "date_format": "%Y/%m/%d",
+            "clearing_days": 4
+        },
+        "payment_type": {
+            "Bar": {
+                "account": "Assets:Cash"
+            },
+            "Unbar": {
+                "account": "Assets:Giro"
+            }
+        },
+        "vendor_map": {
+            "feiS5+tow0CRf1HxOsuHbw": {
+                "payee": "Hennig",
+                "account": "Expenses:Bakery"
+            }
+        }
+    }
+    vendor = config['vendor_map'].get(data['qr_fields']['kassen_seriennummer'], {"payee": "Unknown", "account": "Expenses:Misc"})
+    
+    date_str = data['qr_fields']['finish_zeit']
+    dt = _iso8601_to_dt(date_str)
+    dt_format = dt.strftime(config['ledger']['date_format'])
+    if data['qr_fields']['process_data']['parsed']['payment']['type'] == "Unbar":
+        clearing_date = dt + timedelta(days=config['ledger']['clearing_days'])
+        clearing_format = clearing_date.strftime(config['ledger']['date_format'])
+        entry_date = f"{dt_format}={clearing_format}"
+        source_acc = config['payment_type']['Unbar']['account']
+    else:
+        entry_date = dt_format
+        source_acc = config['payment_type']['Bar']['account']
+
+    return f"""
+{entry_date} * {vendor['payee']}
+    {vendor['account']}  {data['qr_fields']['process_data']['parsed']['payment']['total_float']}€
+    {source_acc}
+"""
 
 def main():
     parser = argparse.ArgumentParser(description="Verify TSE/DSFinV-K V0 QR signature")
     parser.add_argument("--use-tz", choices=["0", "1"], default="0",
                         help="1=honor timezone offsets (standard). 0=ignore offsets (compat). Default 0")
+    parser.add_argument("--format", choices=["json", "ledger"], default="json",
+                        help="output format. Default json")
     parser.add_argument('-i', '--input',
                         type=argparse.FileType('r'), default=sys.stdin,
                         help="file to read from. Default: stdin",
                         metavar="file name" )
     args = parser.parse_args()
     use_tz = args.use_tz == "1"
+    output_format = args.format
     
     if args.input.isatty():
         print("Error: no input given. Use file name or pipe.")
@@ -366,7 +416,7 @@ def main():
         verified = False
         verification_error = str(e)
 
-    output = {
+    data = {
         "raw_line": raw,
         "qr_fields": {
             "qr_code_version": qr_code_version,
@@ -393,7 +443,10 @@ def main():
         
     }
 
-    print(json.dumps(output, indent=2, ensure_ascii=False, cls=DecimalEncoder))
+    if output_format == "json":
+        print(json.dumps(data, indent=2, ensure_ascii=False, cls=DecimalEncoder))
+    elif output_format == "ledger":
+        print(ledger_dump(data))
 
 if __name__ == "__main__":
     main()
