@@ -281,28 +281,37 @@ def verify_signature(payload_bytes, signature_bytes, public_key_bytes, sig_alg):
     except InvalidSignature:
         return False
 
-def ledger_dump(data):
-    # Default config, will be overwritten by a config file.
-    config = {
-        "ledger": {
-            "date_format": "%Y/%m/%d",
-            "clearing_days": 4
+# Default config, will be overwritten by a config file.
+config = {
+    "ledger": {
+        "date_format": "%Y/%m/%d",
+        "clearing_days": 4
+    },
+    "payment_type": {
+        "Bar": {
+            "account": "Assets:Cash"
         },
-        "payment_type": {
-            "Bar": {
-                "account": "Assets:Cash"
-            },
-            "Unbar": {
-                "account": "Assets:Giro"
-            }
-        },
-        "vendor_map": {
-            "feiS5+tow0CRf1HxOsuHbw": {
-                "payee": "Hennig",
-                "account": "Expenses:Bakery"
-            }
+        "Unbar": {
+            "account": "Assets:Giro"
+        }
+    },
+    "vendor_map": {
+        "feiS5+tow0CRf1HxOsuHbw": {
+            "payee": "Hennig",
+            "account": "Expenses:Bakery"
         }
     }
+}
+
+def deep_merge(base, user):
+    for key, value in user.items():
+        if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+            deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+def ledger_dump(data):
     vendor = config['vendor_map'].get(data['qr_fields']['kassen_seriennummer'], {"payee": "Unknown", "account": "Expenses:Misc"})
     
     date_str = data['qr_fields']['finish_zeit']
@@ -332,16 +341,25 @@ def main():
     parser.add_argument('-i', '--input',
                         type=argparse.FileType('r'), default=sys.stdin,
                         help="file to read from. Default: stdin",
-                        metavar="file name" )
+                        metavar="file name")
+    parser.add_argument('-c', '--config',
+                        type=argparse.FileType('r'), default=None,
+                        help="file to read the configuration from. Defaut: none",
+                        metavar="config file name")
     args = parser.parse_args()
+
+    global config
+    if args.config:
+        user_data = json.load(args.config)
+        config = deep_merge(config, user_data)
+        args.config.close()
+
     use_tz = args.use_tz == "1"
     output_format = args.format
-    
     if args.input.isatty():
         print("Error: no input given. Use file name or pipe.")
         parser.print_help()
         sys.exit(1)
-
     raw = args.input.read().strip()
     if not raw:
         sys.exit("No input received")
