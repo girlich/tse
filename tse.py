@@ -8,6 +8,7 @@ Signed payload = ASN.1 DER structure per Java reference:
 import sys
 import json
 import base64
+import binascii
 import re
 from datetime import datetime, timedelta, timezone
 import argparse
@@ -131,6 +132,7 @@ def _signature_algorithm_to_oid(sig_alg: str) -> str:
     try:
         return {
             "ecdsa-plain-sha256": "0.4.0.127.0.7.1.1.4.1.3",
+            "sha256withecdsa": "0.4.0.127.0.7.1.1.4.1.3",
             "ecdsa-plain-sha384": "0.4.0.127.0.7.1.1.4.1.4",
         }[sig_alg.strip().lower()]
     except KeyError:
@@ -241,7 +243,7 @@ def verify_signature(payload_bytes, signature_bytes, public_key_bytes, sig_alg):
                 We build ASN.1/DER from r,s like the Java reference (SEQUENCE of two INTEGERs).
     """
     sig_alg_lower = sig_alg.strip().lower()
-    if sig_alg_lower == "ecdsa-plain-sha256":
+    if sig_alg_lower == "ecdsa-plain-sha256" or sig_alg_lower == "sha256withecdsa":
         hash_alg = hashes.SHA256()
         curve = ec.SECP256R1()
     elif sig_alg_lower == "ecdsa-plain-sha384":
@@ -332,11 +334,32 @@ def ledger_dump(data):
     {source_acc}
 """
 
+
+def decode_tse_field(data):
+    """
+    Try decoding first Base64 and then Hex.
+    Returns the bytes or raises a ValueError.
+    """
+    if not data:
+        return b""
+    
+    # first try: Base64
+    try:
+        return base64.b64decode(data, validate=True)
+    except Exception:
+        pass
+
+    # second try: Hex
+    try:
+        return binascii.unhexlify(data)
+    except Exception:
+        raise ValueError(f"Daten konnten weder als Base64 noch als Hex dekodiert werden: {data[:20]}...")
+
 def main():
     parser = argparse.ArgumentParser(description="Verify TSE/DSFinV-K V0 QR signature")
     parser.add_argument("--use-tz", choices=["0", "1"], default="0",
                         help="1=honor timezone offsets (standard). 0=ignore offsets (compat). Default 0")
-    parser.add_argument("--format", choices=["json", "ledger"], default="json",
+    parser.add_argument('-f', '--format', choices=["json", "ledger"], default="json",
                         help="output format. Default json")
     parser.add_argument('-i', '--input',
                         type=argparse.FileType('r'), default=sys.stdin,
@@ -385,8 +408,9 @@ def main():
     public_key_b64      = fields[11]
 
     # Base64 dekodieren (public key wird für Signed-Payload benötigt: serialNumber = SHA256(pk))
-    signature_bytes = base64.b64decode(signatur_b64)
-    public_key_bytes = base64.b64decode(public_key_b64)
+    signature_bytes = decode_tse_field(signatur_b64)
+    print(public_key_b64)
+    public_key_bytes = decode_tse_field(public_key_b64)
 
     # Detect public key format and basic validity (point on expected curve)
     public_key_info = {
@@ -402,7 +426,7 @@ def main():
             # pick curve from sig_alg for validation (best-effort)
             try:
                 sig_alg_lower = sig_alg.strip().lower()
-                if sig_alg_lower == "ecdsa-plain-sha256":
+                if sig_alg_lower == "ecdsa-plain-sha256" or sig_alg_lower == "sha256withecdsa":
                     chk_curve = ec.SECP256R1()
                 elif sig_alg_lower == "ecdsa-plain-sha384":
                     chk_curve = ec.BrainpoolP384R1()
