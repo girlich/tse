@@ -482,7 +482,13 @@ def main():
         "use_tz": use_tz,
         "signature_verified": verified,
         "verification_error": verification_error,
-        
+
+    }
+    
+    vendor = config['vendor_map'].get(data['qr_fields']['kassen_seriennummer'], {"payee": "Unknown", "account": "Expenses:Misc"})
+    data["book_keeping"] = {
+        "payee": vendor["payee"],
+        "account": vendor["account"]
     }
 
     if output_format == "json":
